@@ -1,2 +1,3 @@
 news.sql.gz
 qdrant_storage
+**/__pycache__/
