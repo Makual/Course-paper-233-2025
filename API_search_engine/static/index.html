@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>News Search Demo</title>
+  <style>
+    body        { font-family: Arial, sans-serif; margin: 0 auto; max-width: 900px; padding: 1rem; }
+    #controls   { display: flex; gap: .5rem; margin-bottom: 1rem; flex-wrap: wrap; }
+    #news-list  { list-style:none; padding:0; margin:0; }
+    #news-list li { padding:.5rem; border-bottom:1px solid #ddd; cursor:pointer; }
+    #news-text { white-space: pre-wrap; margin-top:1rem; }
+    #news-list li {
+        padding:.5rem;
+        border-bottom:1px solid #ddd;
+        cursor:pointer;
+        display:flex;
+        justify-content:space-between;
+        gap:.5rem;
+    }
+    .date { color:#666; font-size:.85em; white-space:nowrap; }
+    button      { cursor: pointer; }
+  </style>
+</head>
+<body>
+<h1>News Search Demo</h1>
+
+<div id="controls">
+  <input id="query"  type="text"  placeholder="Поиск…" style="flex:1">
+  <input id="from"   type="date">
+  <input id="to"     type="date">
+  <button id="search">Search</button>
+  <button id="add">Add news</button>
+</div>
+<div id="pager" style="margin: .5rem 0;">
+  <button id="prev">Prev</button>
+  <span id="state"></span>
+  <button id="next">Next</button>
+</div>
+<ul id="news-list"></ul>
+<article id="news-text"></article>
+
+<script>
+const API = '/api';
+let curPage   = 1;
+const pageSize= 50;
+let lastTotal = 0;
+
+
+async function loadPage(page = 1){
+  const r  = await fetch(`${API}/news?page=${page}&page_size=${pageSize}`);
+  if(!r.ok){ alert(await r.text()); return; }
+  const res = await r.json();
+
+  curPage   = res.page;
+  lastTotal = res.total;
+  renderList(res.items);
+  updatePager();
+}
+
+function renderList(arr){
+  const ul = document.getElementById('news-list');
+  ul.innerHTML='';
+  arr.forEach(n=>{
+    const li   = document.createElement('li');
+
+    const spanTitle = document.createElement('span');
+    spanTitle.textContent = n.title;
+    li.appendChild(spanTitle);
+
+    const spanDate  = document.createElement('span');
+    spanDate.className = 'date';
+
+    const d = new Date(n.date_creation);
+    spanDate.textContent = isNaN(d) ? '—' : d.toLocaleDateString('ru-RU');
+    li.appendChild(spanDate);
+
+    li.onclick = ()=> showNews(n.id);
+    ul.appendChild(li);
+  });
+  document.getElementById('news-text').textContent='';
+}
+
+function updatePager(){
+  const totalPages = Math.max(1, Math.ceil(lastTotal / pageSize));
+  document.getElementById('state').textContent = `${curPage} / ${totalPages}`;
+  document.getElementById('prev').disabled = curPage <= 1;
+  document.getElementById('next').disabled = curPage >= totalPages;
+}
+
+
+async function showNews(id){
+  const r = await fetch(`${API}/news/${id}`);
+  if(!r.ok){ alert(await r.text()); return; }
+  const n = await r.json();
+  document.getElementById('news-text').textContent =
+      (n.anons||'') + "\n\n" + n.body;
+}
+
+async function search(){
+  const q  = document.getElementById('query').value.trim();
+  if(!q){ loadPage(1); return; } 
+
+  const fd = document.getElementById('from').value;
+  const td = document.getElementById('to').value;
+  const p  = new URLSearchParams({q});
+  if(fd) p.append('from_date', fd+'T00:00:00');
+  if(td) p.append('to_date',   td+'T23:59:59');
+
+  const hits = await fetch(`${API}/search?`+p.toString()).then(r=>r.json());
+  if(!hits.length){ renderList([]); updatePager(); return; }
+
+  const titles = await fetch(`${API}/news/by_ids`,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(hits.map(h=>h.id))
+  }).then(r=>r.json());
+
+  curPage   = 1;
+  lastTotal = titles.length;
+  renderList(titles);
+  updatePager();  
+
+}
+
+async function addNews(){
+  const title = prompt('Title');
+  if(!title) return;
+  const body  = prompt('Body');
+  const anons = prompt('Anons (optional)') || null;
+
+  await fetch(`${API}/news`,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+          id: String(Date.now()),
+          title, anons, body
+      })
+  });
+  await loadPage(curPage);
+}
+
+
+document.getElementById('prev').onclick = ()=> loadPage(curPage-1);
+document.getElementById('next').onclick = ()=> loadPage(curPage+1);
+document.getElementById('search').onclick = search;
+document.getElementById('add').onclick    = addNews;
+
+
+document.addEventListener('keydown', e=>{
+  if(e.target.tagName === 'INPUT') return; 
+  if(e.key === 'ArrowLeft'  && curPage>1)                loadPage(curPage-1);
+  if(e.key === 'ArrowRight' && curPage*pageSize<lastTotal)loadPage(curPage+1);
+});
+
+
+loadPage();
+</script>
+</body>
+</html>

@@ -26,25 +26,69 @@ def mrr(ranked_ids: List[str], gt_ids: List[str]) -> float:
     rank = _hit_rank(ranked_ids, gt_ids)
     return 1.0 / rank if rank else 0.0
 
+import numpy as np
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Dict, List
+
+def _eval_single(
+    q: str,
+    gt: List[str],
+    backend,
+    top_k: int,
+) -> tuple[float, float, float]:
+    """
+    Для одного запроса q вычисляет Precision@k, Recall@k и MRR.
+    """
+    results = backend.search(q, top_k)
+    ranked_ids = [doc_id for doc_id, _ in results]
+    p = precision_at_k(ranked_ids, gt, top_k)
+    r = recall_at_k(ranked_ids, gt, top_k)
+    m = mrr(ranked_ids, gt)
+    return p, r, m
+
 def evaluate(
     backend,
     queries_gt: Dict[str, List[str]],
     top_k: int = 10,
+    max_workers: int | None = None,
 ) -> Dict[str, float]:
     """
-    Выполняет оценку Precision@k, Recall@k и MRR для каждого query → gt списков.
-    backend.search(q: str, top_k: int) -> List[(id, score)]
+    Выполняет оценку Precision@k, Recall@k и MRR для каждого query → gt списка.
+    Параметры:
+      • backend.search(q: str, top_k: int) -> List[(id, score)]
+      • queries_gt: {query: [relevant_doc_id, ...], ...}
+      • top_k: глубина ранжирования
+      • max_workers: число потоков (None → os.cpu_count()*5 по умолчанию)
+    
+    Возвращает средние метрики по всем запросам.
     """
-    p_list, r_list, m_list = [], [], []
+    p_vals = []
+    r_vals = []
+    m_vals = []
 
-    for q, gt in queries_gt.items():
-        results = backend.search(q, top_k)
-        ranked_ids = [doc_id for doc_id, _ in results]
-        p_list.append(precision_at_k(ranked_ids, gt, top_k))
-        r_list.append(recall_at_k(ranked_ids, gt, top_k))
-        m_list.append(mrr(ranked_ids, gt))
+    # Если max_workers=None, ThreadPoolExecutor сам выберет разумное число
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(_eval_single, q, gt, backend, top_k): q
+            for q, gt in queries_gt.items()
+        }
+
+        for future in as_completed(futures):
+            try:
+                p, r, m = future.result()
+            except Exception as e:
+                # Если поиск или вычисление метрик упало,
+                # логируем ошибку и считаем метрики как нули
+                q_failed = futures[future]
+                print(f"[Error] query={q_failed!r} → {type(e).__name__}: {e}")
+                p, r, m = 0.0, 0.0, 0.0
+
+            p_vals.append(p)
+            r_vals.append(r)
+            m_vals.append(m)
+
     return {
-        f"Precision@{top_k}": float(np.mean(p_list)),
-        f"Recall@{top_k}":    float(np.mean(r_list)),
-        "MRR":                float(np.mean(m_list)),
+        f"Precision@{top_k}": float(np.mean(p_vals)),
+        f"Recall@{top_k}":    float(np.mean(r_vals)),
+        "MRR":                float(np.mean(m_vals)),
     }

@@ -1,22 +1,20 @@
 # search_engine/bm25.py
 from rank_bm25 import BM25Okapi
 from nltk.tokenize import word_tokenize
-from .base import SearchBackend
 from typing import List, Tuple
+from search_engine.utils import clean_text
 
-class BM25Search(SearchBackend):
+class BM25Search():
     def __init__(self):
-        self.tokenized = []
-        self.doc_ids = []
-        self.bm25 = None
+        self.bm25, self.doc_ids, self.tokens = None, [], []
 
     def index(self, texts: List[str], ids: List[str]):
+        self.tokens = [word_tokenize(clean_text(t)) for t in texts]
+        self.bm25 = BM25Okapi(self.tokens)
         self.doc_ids = ids
-        self.tokenized = [word_tokenize(t.lower()) for t in texts]
-        self.bm25 = BM25Okapi(self.tokenized)
 
     def search(self, query: str, top_k: int = 10) -> List[Tuple[str, float]]:
-        q_tok = word_tokenize(query.lower())
+        q_tok = word_tokenize(clean_text(query))
         scores = self.bm25.get_scores(q_tok)
-        top_ids = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:top_k]
-        return [(self.doc_ids[i], scores[i]) for i in top_ids]
+        idx = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:top_k]
+        return [(self.doc_ids[i], float(scores[i])) for i in idx]

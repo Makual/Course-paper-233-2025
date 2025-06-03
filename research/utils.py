@@ -23,6 +23,38 @@ DATABASE_URL = (
 )
 engine = create_engine(DATABASE_URL)
 
+
+def fetch_last_news(limit: int = 10_000) -> pd.DataFrame:
+    """
+    Берём «последние» статьи из public.tmp_news, полагаясь на то, 
+    что данные уже хранятся в нужном (date_creation DESC) порядке:
+      - limit — максимальное число строк в итоговом DataFrame.
+
+    Реализовано через простой LIMIT, и читаем чанками (chunksize),
+    чтобы PostgreSQL не отправлял слишком много данных сразу.
+    """
+    sql = f"""
+        SELECT id,
+               title,
+               anons,
+               body,
+               date_creation
+          FROM public.tmp_news
+         LIMIT {limit};
+    """
+
+    # Считываем чанками по 1000 строк, чтобы не «сломать» соединение
+    dfs = []
+    for chunk in pd.read_sql(sql, engine, chunksize=1000):
+        dfs.append(chunk)
+
+    if not dfs:
+        # Если запрос вернул пустой результат, возвращаем пустой DataFrame с нужными колонками
+        return pd.DataFrame(columns=["id", "title", "anons", "body", "date_creation"])
+
+    df = pd.concat(dfs, ignore_index=True)
+    return df
+
 def fetch_random_news(limit: int = 10_000, sample_pct: float = 1.0) -> pd.DataFrame:
     """
     Берём «случайную» подвыборку статей (до limit строк) из public.tmp_news:
