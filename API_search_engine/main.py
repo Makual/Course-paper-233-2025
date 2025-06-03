@@ -15,7 +15,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 @app.get("/", include_in_schema=False)
 async def root():
     return FileResponse("static/index.html")
-    
+     
 @app.get("/ping")
 async def ping():
     return {"status": "ok"}

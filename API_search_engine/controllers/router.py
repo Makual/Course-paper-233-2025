@@ -178,8 +178,6 @@ router = APIRouter(prefix="/api", tags=["search"])
 
 
 def hybrid_search(q: str, aug_q: str, *, top_k: int = 10) -> List[Tuple[str, float]]:
-    """BM25(main) ∪ BM25(aug)  →  FAISS-rerank(main)."""
-
     bm  = bm25_backend.bm25.get_scores(word_tokenize(clean_text(q)))
     idx = np.argsort(bm)[::-1][:TOP_BM25]
     ids_main = [bm25_backend.doc_ids[i] for i in idx]
@@ -188,23 +186,29 @@ def hybrid_search(q: str, aug_q: str, *, top_k: int = 10) -> List[Tuple[str, flo
     idx_a = np.argsort(bm_a)[::-1][:TOP_BM25]
     ids_aug = [bm25_backend.doc_ids[i] for i in idx_a]
 
-    # объединяем, сохраняя порядок (main-результаты приоритетнее)
+
     cand_ids = list(dict.fromkeys(ids_main + ids_aug))
 
-    # если FAISS ещё не поднят — отдаём BM25-результаты
+
     if faiss_backend.index_faiss is None:
-        return [(doc, float(bm[bm25_backend.doc_ids.index(doc)]))
-                for doc in cand_ids[:top_k]]
+        return [(doc_id,
+                 float(bm[bm25_backend.doc_ids.index(doc_id)]))
+                for doc_id in cand_ids[:top_k]]
 
-    # ─ FAISS-rerank по исходному запросу ───────────────────────
-    q_vec = _embed([q]).astype("float32")[0]        # (768,)
+    common_ids = [i for i in cand_ids if i in faiss_backend.doc_ids]
+    if not common_ids:                   # FAISS не знает ни одного из кандидатов
+        return [(doc_id,
+                 float(bm[bm25_backend.doc_ids.index(doc_id)]))
+                for doc_id in cand_ids[:top_k]]
 
-    sub_idxs = [faiss_backend.doc_ids.index(i) for i in cand_ids]
-    sub_embs = faiss_backend.embeddings[sub_idxs]   # (M,768)
-    scores   = sub_embs @ q_vec                     # cos ≈ dot (векторы нормированы)
+
+    q_vec = _embed([q]).astype("float32")[0]
+    sub_idxs = [faiss_backend.doc_ids.index(i) for i in common_ids]
+    sub_embs = faiss_backend.embeddings[sub_idxs]
+    scores   = sub_embs @ q_vec
     order    = scores.argsort()[::-1][:top_k]
 
-    return [(cand_ids[i], float(scores[i])) for i in order]
+    return [(common_ids[i], float(scores[i])) for i in order]
 
 
 @router.get("/search", response_model=List[SearchResponseItem], summary="Поиск")
@@ -220,7 +224,6 @@ async def search(
     aug_q = gpt_expand(q).strip()
     results = hybrid_search(q, aug_q, top_k=top_k)
 
-    # фильтр по дате
     if from_date or to_date:
         results = [
             (doc_id, score) for doc_id, score in results
@@ -233,7 +236,7 @@ async def search(
 
     return [SearchResponseItem(id=d, score=s) for d, s in results]
 
-# ---------- CRUD — index / list / by_ids -----------------------------------
+
 def _persist_news(news: NewsInput, vec: np.ndarray):
     with engine.begin() as conn:
         conn.execute(text("""
@@ -255,6 +258,9 @@ async def add_news(news: NewsInput):
         faiss_backend.index_faiss.add(vec.reshape(1,-1).astype("float32"))
         faiss_backend.embeddings = np.vstack([faiss_backend.embeddings, vec])
         faiss_backend.doc_ids.append(news.id)
+
+    faiss.write_index(faiss_backend.index_faiss, FAISS_IDX)
+    Path(FAISS_IDS).write_text(json.dumps(faiss_backend.doc_ids))
 
     toks = word_tokenize(clean_text(text_raw)) or ["dummy"]
     bm25_backend.tokens.append(toks)
@@ -281,7 +287,7 @@ async def list_news(page:int=1, page_size:int=50):
 
 @router.get("/news/{news_id}", response_model=NewsFull)
 async def get_news(news_id: str):
-    with engine.connect() as conn:                     # ← обычное подключение
+    with engine.connect() as conn:          
         row = conn.execute(SQL_ONE, {"id": news_id}).mappings().first()
 
     if row is None:
@@ -299,7 +305,7 @@ async def news_by_ids(ids: List[str]):
         """).bindparams(bindparam("ids", expanding=True))
     )
 
-    with engine.connect() as conn:          # ← открываем обычное соединение
+    with engine.connect() as conn:
         rows = conn.execute(stmt, {"ids": ids}).mappings().all()
 
     return [NewsShort(**r) for r in rows]

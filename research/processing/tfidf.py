@@ -2,7 +2,7 @@ from typing import List, Tuple
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
-from utils import clean_text
+from processing.utils import clean_text
 
 class TfidfResearch():
     def __init__(self, max_features: int = 50000):
@@ -11,7 +11,6 @@ class TfidfResearch():
         self.matrix = None
 
     def index(self, texts: List[str], ids: List[str]):
-        # Предобрабатываем тексты
         cleaned = [clean_text(t) for t in texts]
         self.matrix = self.vectorizer.fit_transform(cleaned)
         self.doc_ids = ids
