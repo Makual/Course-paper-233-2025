@@ -1,12 +1,14 @@
 # Course-paper-233-2025
 Kuznetsov Maxim 233 DSBA 2025
 
+![изображение](https://github.com/user-attachments/assets/c8da36c1-c960-40b9-97a1-bbba74138cd6)
+![изображение](https://github.com/user-attachments/assets/6ab5e68c-16cd-487f-83c9-c7102d0fab15)
 
 
 # Semantic News Search API
 
 A lightweight hybrid search engine for a Russian news corpus.
-The backend mixes **BM25**, **FAISS with light SOTA BERTA embeddings** and optional **GPT query augmentation**, 
+The backend mixes **BM25**, **FAISS with light SOTA ![BERTA](https://huggingface.co/sergeyzh/BERTA) embeddings** and optional **GPT query augmentation**, 
 Backend is on FastAPI REST with static demo site
 
 <p align="center">
