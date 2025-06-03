@@ -1,4 +1,3 @@
-# search_engine/bm25.py
 from rank_bm25 import BM25Okapi
 from nltk.tokenize import word_tokenize
 from typing import List, Tuple
