@@ -56,6 +56,7 @@ API_search_engine/
 git clone https://github.com/your‑org/semantic‑news‑search.git
 cd semantic‑news‑search
 
+cp .env.example .env
 ```
 
 **Minimal `.env`**
