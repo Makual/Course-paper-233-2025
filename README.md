@@ -8,7 +8,7 @@ Kuznetsov Maxim 233 DSBA 2025
 # Semantic News Search API
 
 A lightweight hybrid search engine for a Russian news corpus.
-The backend mixes **BM25**, **FAISS with light SOTA ![BERTA](https://huggingface.co/sergeyzh/BERTA) embeddings** and optional **GPT query augmentation**, 
+The backend mixes **BM25**, **FAISS with light SOTA [BERTA](https://huggingface.co/sergeyzh/BERTA) embeddings** and optional **GPT query augmentation**, 
 Backend is on FastAPI REST with static demo site
 
 <p align="center">
